@@ -15,6 +15,16 @@ M: More URL 更多的url
 ```shell
 scrapy startproject your_project_name
 ```
+文件夹目录Tree    
+your_project_name    
+- spiders
+  - __init__.py
+- __init__.py
+- middlewares.py
+- pipeline.py
+- settings.py
+- scrapy.cfg
+
 # 1.4 自定义继承爬虫类
 在spiders的目录下创建my_spider.py文件
 ```Python
@@ -256,6 +266,176 @@ CSS常用的基本语法
 
 # 第4章 使用Item封装数据
 用字典包装难以一目了然数据中包含哪些字段，影响代码可读性。
+
+```Python
+from scrapy import Item, Field
+class BookItem(Item):
+    name = Field()
+    price = Field()
+```
+
+# 第5章 使用Item Pipeline处理数据
+Item Pipeline的几种典型应用:
+- 清晰数据
+- 验证数据的有效性
+- 过滤掉重复的数据
+- 将数据存入数据库
+
+在pipelines.py文件中，实现如下内容:
+```Python
+class PriceConverterPipeline(object):
+    exchange_rate = 7.16
+    def process_item(self, item, spider):
+        price = float(item['price'][1:]) * self.exchange_price
+        item['price'] = '￥ %.2f' % price
+        return item
+```
+一个Item Pipeline不需要继承特定基类，只需要实现某些特定的方法，如 
+- process_item(self, item, spider)
+- open_spider(self, spider)  可选，spider打开时处理数据前回调方法，通常处理数据之前完成某些初始化工作，如连接数据库
+- close_spider(self, spider)  可选，spider关闭时处理数据后回调方法，通常处理完成所有数据之后完成某些清理工作，如关闭数据库
+- from_crawler(cls, crawler)  可选，创建Item Pipeline对象回调该类方法。该方法通过crawler.settings读取配置，根据配置创建Item Pipeline对象
+
+启用自定义的Item Pipeline, 通过配置settings.py
+```Python
+ITEM_PIPELINES = {
+    'your_project_name.pipelines.PriceConverterPipeline': 300,
+}
+```
+
+关于from_crawler使用代码示例
+```Python
+from scrapy.item import Item
+import pymongo
+
+class MongoDBPipeline(object):
+
+    @classmethod
+    def from_crawler(cls, crawler):
+        cls.DB_URL = crawler.settings.get('MONGO_DB_URI','mongodb://localhost:27107/')
+        cls.DB_NAME = crawler.settings.get('MONGO_DB_NAME', 'scrapy_data')
+        return cls()
+
+    def open_spider(self, spider):
+        self.client = pymongo.MongoClient(self.DB_URI)
+        self.db = self.client[self.DB_NAME]
+
+    def close_spider(self, spider):
+        self.client.close()
+
+    def process_item(self, item, spider):
+        collection = self.db[spider.name]
+        post = dict(item) if isinstance(item, Item) else item
+        collection.insert_one(post)
+        return item
+
+# 在settings.py中配置所要使用的数据库进行设置
+# MONGO_DB_URI = 'mongodb://192.168.1.105:27017/'
+# MONGO_DB_NAME = 'liushuo_scrapy_data'
+
+# 配置
+# ITEM_PIPELINES = {
+#     'your_project_name.pipelines.MongoDBPipeline': 300,
+# }
+```
+
+# 第6章 使用LinkExtractor提取链接
+```Python
+from scrapy.linkextractors import LinkExtractor
+
+# 提取链接
+# next_url = response.css('ul.pager li.next a::attr(href)').extract_first()
+le = LinkExtractor(restrict_css='ui.paper li.next')
+links = le.extract_links(response)
+```
+LinkExtractor均有默认参数，参数说明：
+- allow: 接受一个正则表达式或一个正则表达式列表，参数为空则提取全部链接。
+- deny: 与allow相反，排除与正则表达式匹配的链接。
+- allow_domains: 接受一个域名或一个域名列表，提取到指定域的链接。
+- deny_domains: 与allow_domains相反，排除指定域的链接。
+- restrict_xpaths: 接受一个XPath表达式或一个XPath表达式列表，提取XPath表达式选中区域下的链接。
+- restrict_css: 接受一个css选择器或一个css选择器列表，提取css选择器选中区域下的链接。
+- tags: 接受一个标签(字符串)或一个标签列表，提取指定标签内的链接，默认['a','area']
+- attrs: 接受一个属性(字符串)或一个属性列表，提取指定属性内的链接，默认为['href']
+- process_value: 接受一个func(value)的回调函数。如果传递该参数，LinkExtractor将调用回调函数对提取的每一个链接(如a的href)进行处理，回调函数正常情况下应返回一个字符串(处理结果)，想要抛弃所处理的链接时，返回None。
+
+# 第7章 使用Exporter导出数据
+Export导出器支持的数据格式：
+- **JSON(JsonItemExporter)**
+- **JSON lines(JsonLinesItemExporter)**
+- **CSV(CsvItemExporter)**
+- **XML(XmlItemExporter)**
+- Pickle(PickleItemExporter)
+- Marshal(MarshalItemExporter)
+
+## 7.1 指定如何导出数据
+
+命令行:    
+`scrapy crawl spider_name -o 文件路径 -t 数据格式` 或 `scrapy crawl spider_name -o 文件路径.csv`    
+指定导出文件路径时：    
+- %(name)s: 会被替换成Spider里定义的name的名字
+- %(time)s: 会被替换成文件创建时间
+
+`scrapy crawl books -o 'export_data/%(name)s/%(time)s.csv'`
+
+
+配置(settings):    
+```
+# 框架内部支持的数据格式
+# FEED_EXPORTERS_BASE = {
+#    'json': 'scrapy.exporters.JsonItemExporter',
+#    'jsonlines': 'scrapy.exporters.JsonLinesItemExporter',
+#    'jl': 'scrapy.exporters.JsonLinesItemExporter',
+#    'csv': 'scrapy.exporters.CsvItemExporter',
+#    'xml': 'scrapy.exporters.XmlItemExporter',
+#    'marshal': 'scrapy.exporters.MarshalItemExporter',
+#    'pickle': 'scrapy.exporters.PickleItemExporter',
+# }
+
+
+# 指定导出文件路径
+FEED_URI = 'export_data/%(name)s_%(time)s.data'
+
+# 指定导出的数据格式
+FEED_FORMAT = 'csv'
+
+# 导出文件编码
+FEED_EXPORT_ENCODING = 'utf-8'
+
+# 导出数据包含的字段(默认情况下导出所有字段)，并指定次序
+FEED_EXPORT_FIELDS = ['name', 'author', 'price']
+
+# 用户自定义支持的数据格式
+# FEED_EXPORTERS = {'excel': 'my_project.my_exporters.ExcelItemExporter'}
+```
+
+**自定义实现Exporter**，创建my_exporters.py(与settings.py同级目录),代码如下
+```Python
+from scrapy.exporters import BaseItemExporter
+import xlwt
+
+class ExcelItemExporter(BaseItemExporter):
+    def __init__(self, file, **kwargs):
+        self._configure(kwargs)
+        self.file = file
+        self.wbook = xlwt.Workbook()
+        self.wsheet = self.wbook,add_sheet("scrapy")
+        self.row = 0
+
+    def finish_exporting(self):
+        self.wbook.save(self.file)
+
+    def export_item(self, item):
+        fields = self._get_serialized_fields(item)
+        for col, v in enumerate(x for _, x in fields):
+            self.wsheet.write(self.row, col, v)
+        self.row += 1
+```
+现在，需要在settings.py配置 
+```Python
+# 用户自定义支持的数据格式
+FEED_EXPORTERS = {'excel': 'my_project.my_exporters.ExcelItemExporter'}
+```
 
 
 
