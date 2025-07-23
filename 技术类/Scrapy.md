@@ -102,6 +102,160 @@ request2 = scrapy.Request('http://quotes.toscrape.com')
 
 HtmlResponse和XmlResponse是TextResponse的子类。
  
+## 2.3 Spider的开发流程
+
+开发流程
+1. 继承scrapy.Spider
+2. 为Spider取名
+3. 设定起始爬取点
+4. 实现页面解析函数
+
+Spider基类的start_requests创建Request对象。
+```Python
+class Spider(object_ref):
+    ···
+    def start_requests(self):
+        for url in self.start_urls:
+            yield self.make_requests_from_url(url)
+
+    def make_requests_from_url(self, url):
+        return Request(url,dont_filter=True)
+
+    def parse(self, response):
+        raise NotImplementdError
+```
+因此如果要自定义请求，可以通过覆盖基类的 start_requests 方法来实现。 如下：
+```Python
+class MySpider(spider.Spider):
+    def start_requests(self):
+        yield scrapy.Request('http://books.toscrape.com/',callback=self.parse_book, headers={'User-Agent': 'Mozilla/5.0'}, dont_filter=True)
+
+    def parse_book(response):
+        pass
+```
+
+# 第3章 使用Selector提取数据
+## 3.1 Selector对象
+HTTP文本解析模块：
+- BeautifulSoup
+- lxml
+
+Scrapy基于lxml构建，简化了API,实现了Selector类。    
+
+选中数据(Selector/SelectorList)：
+- xpath
+- css
+
+提取数据:
+- extract
+- re
+- extract_first (SelectorList专有)
+- re_first (SelectorList专有)
+
+```Python
+from scrapy.selector import Selector
+from scrapy.http import HtmlResponse
+
+text ='<html><body><h1>Hello World</h1> <h1>Hello Scrapy</h1><b>Hello Python</b><ul><li>C++</li><li>Java</li><li>Python</li></ul></body></html>'
+# 文本
+selector = Selector(text=text)
+
+# response响应对象
+response = HtmlReponse(url='http://www.example.com',body=text,encoding='utf-8')
+selector = Selecotr(response=text)
+
+selector_list = selector.xpath('//h1')
+```
 
 
+## 3.2 Response内置Selector
+
+源码如下：
+```
+class TextResponse(Response):
+    def __init__(self, *args, **kwargs):
+        ...
+        self._cached_selector=None
+        ...
+
+    @property
+    def selector(self):
+        from scrapy.selector import Selector
+        if self._cached_selector is None:
+            self._cached_selector = Selector(self)
+        return self._cached_selector
+
+    def xpath(self, query, **kwargs):
+        return self.selector.xpath(query, **kwargs)
+
+    def css(self, query):
+        return self.selector.css(query)
+```
  
+使用非常简单：
+```Python
+response.xpath('.//h1/text()').extract()
+response.css('li::text').extract()
+```
+
+## 3.3 XPath
+XPath: XML路径语言(XML Path Language)
+
+xml文档的节点有多种类型，常见如下：
+- 根节点 整个文档树的根。
+- 元素节点 html body div p a
+- 属性节点 href
+- 文本节点 cancel confirm
+
+节点间的关系：
+- 父子 body是html的子节点，p和a是div的子节点。反过来，div是p和a的父节点。
+- 兄弟 p和a为兄弟节点
+- 祖先/后裔 body、div、p、a都是html的后裔节点；反过来html是它们的祖先节点
+
+XPath常用的基本语法：
+
+|表达式|描述|例子|
+|:--:|:--:|:--:|
+|/|选中文档的根(root)| 选中一个从根节点的绝对路径: response.xpath('/html')<br/>选中div子节点中的所有a: response.xpath('/html/body/div/a')|
+|.|选中当前节点|选中第1个a下面的img: response.xpath('//a[1]/.//img')|
+|..|选中当前节点的父节点|选中所有img的父节点: response.xpath('//img/..')|
+|Element|选中子节点所有Element元素节点|
+|//Element|选中后代节点中所有Element元素节点|选中文档中所有的a: response.xpath('//a')<br/>选中body后代中的所有img: response.xpath('/html/body//img')|
+|*|选中所有元素子节点|选中html所有元素子节点: response.xpath('/html/*')<br/>选中div的所有后代元素节点: response.xpath('/html/body/div//*')<br/>选中div孙节点的所有img: response.xpath('//div/*/img')|
+|text()|选中所有文本子节点|选中所有a的文本: response.xpath('//a/text()')|
+|@Attr|选中名为Attr的属性节点|选中所有img的src属性: response.xpath('//img/@src')<br/>选中文档中所有href属性: response.xpath('//@href')|
+|@*|选中所有属性节点|获取第一个a下img的所有属性: response.xpath('//a[1]/img/@*')|
+|[谓语]|谓语用来查找某个特定的节点或包含某个特定值的节点|选中所有a中的第3个: response.xpath('//a[3]')<br/>使用last函数，选中最后1个: response.xpath('//a[last()]')<br/>使用position函数，选中前3个: response.xpath('//a[position()<=3]')<br/>选中所有含有id属性的div: response.xpath('//div/[@id]')<br/>选中所有含id属性且值为“images”的div: response.xpath('//div[@id="images"]')|
+
+常用函数:     
+- string(arg): 返回参数的字符串值 `response.xpath('/html/body/a/strong/text()').extract()` = `response.xpath('string(/html/body/a/strong)').extract()`
+- contains(str1, str2): 判断str1中是否包含str2，返回布尔值 `response.xpath('//p[contians(@class 'info')]')`
+
+## 3.4 CSS选择器
+css选择语法简单，其内部会使用Python库cssselect将css转换成xpath表达式。
+
+CSS常用的基本语法
+
+|表达式|描述|例子|详例|
+|:--:|:--:|:--:|:--:|
+|*|选中所有元素|*||
+|E|选中E元素|p|选中所有的img: response.css('img')|
+|E1,E2|选中E1和E2|div,pre|选中所有的base和title: response.css('base,title')|
+|E1 E2|选中E1后代元素中的E2元素|div p|选中div后代中的img: response.css('div img')|
+|E1>E2|选中E1元素中的E2元素|div>p|选中body子元素中的div: response.css('body>div')|
+|E1+E2|选中E1兄弟元素中E2元素|p+strong||
+|.Class|选中Class属性包含Class的元素|.info||
+|#ID|选中id属性ID的元素|#main||
+|[Attr]|选中包含Attr属性的元素|[href]|选中包含style属性的元素: response.css('[style]')|
+|[Attr=Value]|选中包含Attr属性且值为Value的元素|[method=post]|选中属性id值为images-1的元素: response.css('[id=image-1]')|
+|[Attr~=Value]|选中包含Attr属性且值包含Value的元素|[class~=clearfix]||
+|E:nth-child(n)<br/>E:nth-last-child(n)|选中E元素，且该元素必须是其父元素的(倒数)第n个子元素|a:nth-child(1)<br/>a:nth-last-child(2)|选中每个div的第1个a: response.css('div>a:nth-child(1)')<br/>选中第二个div的第一个a: response.css('div:nth-child(2)>a:nth-child(1)')|
+|E:first-child<br/>E:last-child|选中E元素，且该元素必须是其父元素的(倒数)第一个子元素|a:first-child<br/>a:last-child|选中第1个div中的最后一个a: response.css('div:first-child>a:last-child')|
+|E:empty|选中没有子元素的E元素|div:empty||
+|E::text|选中E元素的文本节点(TextNode)|p::text|选择所有a的文本: response.css('a::text')|
+
+# 第4章 使用Item封装数据
+用字典包装难以一目了然数据中包含哪些字段，影响代码可读性。
+
+
+
