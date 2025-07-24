@@ -510,5 +510,186 @@ $ sudo apt-get install tesseract-ocr
 $ pip install pillow pytesseract
 ```
 
+```Python
+# -*- coding: utf-8 -*-
+import scrapy
+from scrapy import Request, FormRequest
+import json
+from PIL import Image
+from io import BytesIO
+import pytesseract
+import logging
+
+class CaptchaLoginSpider(scrapy.Spider):
+    name = "captcha_login"
+    allowed_domains = ["www.google.com"]
+    start_urls = ["https://www.google.com"]
+
+    def parse(self, response):
+        pass
+
+    login_url = "https://www.google.com/login"
+    user = 'hobbit@gmail.com'
+    password = '111111'
+
+    def start_requests(self):
+        yield FormRequest.from_response(self.login_url, callback=self.login, dont_filter=True)
+
+    def login(self, response):
+        # 该方法既是页面的解析函数，又是下载验证码图片的响应处理函数
+        # 如果response.meta['login_response']存在，当前response为验证图片的响应
+        # 否则当前response为登录页面的响应
+        login_response = response.meta.get('login_response')
+
+        if not login_response:
+            # step 1
+            # 此时response为登录页面的响应，从中提取验证码图片的url，下载验证码图片
+            captchUrl = response.css('label.field.prepend-icon img::attr(src)').extract_first()
+
+            captchUrl = response.urljoin(captchUrl)
+            yield Request(url=captchUrl, callback=self.login, meta={'login_response': response}, dont_filter=True)
+        else:
+            # Step 2
+            # 此时， response为验证码图片的响应，response.body是图片二进制数据
+            # login_response 为登录页面的响应，用其构造表单请求并发送
+            formdata = {
+                'email': self.user,
+                'pass': self.password,
+                'code': self.get_captcha_by_OCR(response.body),
+            }
+            yield FormRequest.from_response(login_response, callback=self.parse_login, formdata=formdata, dont_filter=True)
+
+    def parse_login(self, response):
+        info = json.loads(response.body)
+        if info['error'] == '0':
+            logging.info('登录成功')
+            return super().start_requests()
+        logging.info('登录失败: -(, 重新登录...)')
+        return self.start_requests()
+
+    def get_captcha_by_OCR(self, data):
+        img = Image.open(BytesIO(data))
+        img = img.convert('L')
+        captcha = pytesseract.image_to_string(img)
+        img.close()
+        return captcha
+```
+
+人工识别
+```Python
+     class CaptchaLoginSpider(scrapy.Spider):
+        ...
 
 
+        def get_captcha_by_OCR(self, data):
+            # OCR识别
+            img = Image.open(BytesIO(data))
+            img = img.convert('L')
+            captcha = pytesseract.image_to_string(img)
+            img.close()
+
+
+            return captcha
+
+
+        def get_captcha_by_network(self, data):
+            # 平台识别
+            import requests
+
+
+            url = 'http://ali-checkcode.showapi.com/checkcode'
+            appcode = 'f23cca37f287418a90e2f922649273c4'
+
+
+            form = {}
+            form['convert_to_jpg'] = '0'
+            form['img_base64'] = base64.b64encode(data)
+        form['typeId'] = '3040'
+
+
+        headers = {'Authorization': 'APPCODE ' + appcode}
+        response = requests.post(url, headers=headers, data=form)
+        res = response.json()
+
+
+        if res['showapi_res_code'] == 0:
+            return res['showapi_res_body']['Result']
+
+
+        return ''
+
+
+     def get_captcha_by_user(self, data):
+        # 人工识别
+        img = Image.open(BytesIO(data))
+        img.show()
+        captcha = input('输入验证码:')
+        img.close()
+        return captcha
+```
+
+## 10.3 Cookie登录
+Cookie登录
+读取浏览器Cookies
+`pip install browsercookie`
+
+```Python
+import browercookie
+chrome_cookiejar = browsercookie.chrome()  # 获取chrome浏览器中的cookie
+firefox_cookiejar = browsercookie.firefox()  # 获取Firefox浏览器中的Cookie
+```
+
+在middlewares.py实现BrowserCookiesMiddleware 
+```
+     import browsercookie
+     from scrapy.downloadermiddlewares.cookies import CookiesMiddleware
+
+
+     class BrowserCookiesMiddleware(CookiesMiddleware):
+        def __init__(self, debug=False):
+            super().__init__(debug)
+            self.load_browser_cookies()
+
+
+        def load_browser_cookies(self):
+            # 加载Chrome 浏览器中的Cookie
+            jar = self.jars['chrome']
+            chrome_cookiejar = browsercookie.chrome()
+            for cookie in chrome_cookiejar:
+                jar.set_cookie(cookie)
+
+
+            # 加载Firefox 浏览器中的Cookie
+            jar = self.jars['firefox']
+            firefox_cookiejar = browsercookie.firefox()
+            for cookie in firefox_cookiejar:
+                jar.set_cookie(cookie)
+```
+
+# 第11章 爬取动态页面
+```
+$ sudo apt-get install docker
+$ sudo docker pull scrapinghub/splash
+$ pip install scrapy-splash 
+```
+
+在项目的settings.py中添加如下配置：
+```
+# Splash服务器地址
+SPLASH_URL = 'http://localhost:8050'
+
+# 开启Splash的两个下载中间件并调整HttpCompressionMiddleware的次序
+DOWNLOADER_MIDDLEWARES = {
+    'scrapy_splash.SplashCookiesMiddleware': 723,
+    'scrapy_splash.SplashMiddleware': 725,
+    'scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware': 810,
+}
+
+# 设置去重过滤器
+DUPEFILTER_CLASS = 'scrapy_splash.SplashAwareDupeFilter'
+
+# 用来支持cache_args（可选）
+SPIDER_MIDDLEWARES = {
+    'scrapy_splash.SplashDeduplicateArgsMiddleware': 100,
+}
+```
