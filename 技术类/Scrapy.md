@@ -15,6 +15,7 @@ M: More URL 更多的url
 ```shell
 scrapy startproject your_project_name
 ```
+
 文件夹目录Tree    
 your_project_name    
 - spiders
@@ -435,6 +436,78 @@ class ExcelItemExporter(BaseItemExporter):
 ```Python
 # 用户自定义支持的数据格式
 FEED_EXPORTERS = {'excel': 'my_project.my_exporters.ExcelItemExporter'}
+```
+
+# 第8章 项目练习
+模版生成Spider项目
+```Python
+scrapy genspider books books.toscrape.com
+```
+
+# 第9章 下载文件和图片
+专门用于下载文件和图片：
+- FilesPipeline
+- ImagesPipeline
+
+## 9.1 FilesPipeline使用说明
+下载文件步骤:       
+1. 在配置文件settings.py中启用FilesPipeline,通常将其置于其他Item Pipeline之前 `ITEM_PIPELINES = {'scrapy.pipelines.files.FilesPipeline':1}`
+2. 在配置文件settings中，使用FILES_STORE指定文件下载目录，如 `FILES_STORE='/home/admin/Downloads/scrapy'`
+3. 在Spider解析一个包含文件下载链接的页面时，将所有需要下载的文件的url地址收集到一个列表，赋给item的file_urls字段(item['file_urls'])。FilesPipeline在处理每一项item时，会读取item['file_urls']，对其中每一个url进行下载。
+
+## 9.2 ImagesPipeline使用说明
+ImagesPipeline是FilesPipeline的子类
+
+||FilesPipeline|ImagesPipeline|
+|:--:|:--:|:--:|
+|导入路径|scrapy.pipelines.files.FilesPipeline|scrapy.pipelines.images.ImagesPipeline|
+|Item字段|file_urls,files|image_urls,images|
+|下载目录|FILES_STORE|IMAGES_STORE|
+
+ImagesPipeline的额外功能
+- 为图片生成缩略图，开启该功能，只需要在配置文件settings.py中设置IMAGES_THUMBS，如 `IMAGES_THUMBS = {'small': (50, 50), 'big': (270, 270)}` 。 开启该功能，下载一张图片时，本地会出现3张图片(1张原图，2张缩略图)
+- 过滤掉尺寸过小的图片，开始该功能，只需要在配置文件settings.py中设置 IMAGES_MIN_WIDTH 和 IMAGE_MIN_HEIGHT ，如 `IMAGES_MIN_WIDTH = 110` `IMAGES_MIN_HEIGHT = 110`
+
+# 第10章 模拟登录
+## 10.1 Scrapy模拟登录
+
+使用scrap的FormRequest
+```Python
+import scrapy
+from scrapy.http import Request, FormRequest
+
+class LoginSpider(scrapy.Spider):
+    name="login"
+    allowed_domains =["example.webscraping.com"]
+    start_urls = ['http://example.webscraping.com/user/profile']
+
+    def parse(self,response):
+        keys = response.css('table label::text').re('(.+):')
+        values = response.css('table td.w2p_fw::text').extract()
+
+        yield dict(zip(keys, values))
+
+    # -----------------登录------------------
+    login_url = 'http://example.webscraping.com/user/login'
+
+    def start_requests(self):
+        yield Request(self.login_url, callback=self.login)
+
+    def login(self):
+        fd = {'email': '111@webscraping.com','password':'111111'}
+        yield FormRequest.from_response(response, formdata=fd, callback=self.parse_login)
+
+    def parse_login(self, response):
+        if 'Welcome ' in response.text:
+            yield from super().start_requests() 
+```
+
+## 10.2 识别验证码
+
+OCR识别
+```
+$ sudo apt-get install tesseract-ocr
+$ pip install pillow pytesseract
 ```
 
 
