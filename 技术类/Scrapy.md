@@ -693,3 +693,21 @@ SPIDER_MIDDLEWARES = {
     'scrapy_splash.SplashDeduplicateArgsMiddleware': 100,
 }
 ```
+
+相较于安装splash渲染引擎，不如使用playwright模拟操作更为简便    
+模拟google搜索，搜索正确跳转，也获取到了查询后的url，但有反爬虫验证
+```Python
+from playwright.sync_api import sync_playwright
+from playwright_stealth import Stealth
+
+def query_text():
+    with Stealth().use_sync(sync_playwright()) as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto('https://www.google.com/')
+        page.locator('[//*[@id="APjFqb"]').fill("Python Scrapy")
+        page.locator('[//*[@id="APjFqb"]').press("Enter")
+        page.wait_for_load_state("load")
+        print(page.content)
+```
+
