@@ -1,3 +1,27 @@
+# 第一章 PyTorch 简介与安装
+略
+# 第二章 PyTorch 核心模块
+## 2.1 PyTorch 模块结构
+路径：Python安装路径/Lib/site-packages/torch
+- __pycache__ : 存放python解释器生成的字节码，后缀通常pyc/pyo，空间换时间
+- _C : pyi 文件，校验数据类型，底层计算代码采用C++编写，并封装成库，供pytorch的python调用。
+- include : c++的头文件
+- lib : c++的静态和动态链接库
+- autograd : **核心模块与概念**, 实现了梯度的自动求导，极大地简化了深度学习研究者开发的工作量，开发者只需要编写前向传播代码，反向传播部分由autograd自动实现，再也不用手动去推导数学公式，然后编写代码了
+- nn : **99%开发者使用频率最高的模块，搭建网络层就在nn.modules里面**
+- onnx : pytorch模型转换到onnx模型表示的核心模块
+- optim : 优化模块，深度学习的学习过程，就是不断的优化，而优化使用的方法函数，都暗藏在了optim文件夹中。常见的优化方法：Adam, SGD, ASGD. 以及非常重要的学习率调整模块，lr_scheduler.py
+- utils : 各类常用工具，其中比较关键的是data文件夹，tensorboard文件夹
+
+路径: Python安装路径/Lib/site-packages/torchvision
+- datasets : 官方常用的数据集写的**数据读取函数**
+- models : 存放了经典的、可复现的、有训练权重参数可下载的视觉模型，例如分类的alexnet,densenet,efficientnet,mobilenet-v1/2/3,resnet等，分割模型、检测模型、视频任务模型、量化模型。这个库中的模型实现，也是可以借鉴学习的好资料，可以模仿它们的代码结构、函数、类的组织。
+- ops : 视觉任务特殊的功能函数，例如检测中用到的roi_align,roi_pool,boxes的生成，以及focal_loss实现，都在这里边有实现。
+- transformers : 数据增强库，是pytorch自带的图像预处理、增强、转换工具，可以满足日常的需求。Albumentations。
+
+
+
+
 张量：表示一个数值组成的数组，可能有多个维度。具有一个轴的张量对应数学上的向量(vector)。    
 具有俩个轴的张量对应数学上的矩阵(matrix);          
 ```
